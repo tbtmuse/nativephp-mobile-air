@@ -719,24 +719,8 @@ class LaravelEnvironment(private val context: Context) {
 
     private fun setupEnvironment() {
         try {
-            val appKeyFile = File(appStorageDir, APP_KEY_FILE)
-            val appKey: String = if (appKeyFile.exists()) {
-                val contents = appKeyFile.readText().trim()
-                if (contents.startsWith("base64:")) {
-                    Log.d(TAG, "✅ Found valid APP_KEY in file")
-                    contents
-                } else {
-                    Log.w(TAG, "⚠️ Found invalid APP_KEY in file, regenerating...")
-                    appKeyFile.delete()
-                    generateAndSaveAppKey(appKeyFile)
-                }
-            } else {
-                generateAndSaveAppKey(appKeyFile)
-            }
-
             // Set all environment variables in batches for better performance
             setEnvironmentVariables(
-                "APP_KEY" to appKey,
                 // Core Laravel paths
                 "DOCUMENT_ROOT" to "${appStorageDir.absolutePath}/laravel",
                 "LARAVEL_BASE_PATH" to "${appStorageDir.absolutePath}/laravel",
@@ -789,6 +773,23 @@ class LaravelEnvironment(private val context: Context) {
                 "SERVER_PROTOCOL" to "HTTP/1.1",
                 "REQUEST_SCHEME" to "http"
             )
+
+            val appKeyFile = File(appStorageDir, APP_KEY_FILE)
+            val appKey: String = if (appKeyFile.exists()) {
+                val contents = appKeyFile.readText().trim()
+                if (contents.startsWith("base64:")) {
+                    Log.d(TAG, "✅ Found valid APP_KEY in file")
+                    contents
+                } else {
+                    Log.w(TAG, "⚠️ Found invalid APP_KEY in file, regenerating...")
+                    appKeyFile.delete()
+                    generateAndSaveAppKey(appKeyFile)
+                }
+            } else {
+                generateAndSaveAppKey(appKeyFile)
+            }
+
+            setEnvironmentVariable("APP_KEY", appKey)
 
             Log.d(TAG, "✅ Environment variables configured")
 
