@@ -19,6 +19,8 @@ class LaravelEnvironment(private val context: Context) {
     private val appStorageDir = context.getDir("storage", Context.MODE_PRIVATE)
     private val phpBridge = PHPBridge(context)
 
+    private var isFirstRunForSession: Boolean? = null
+
     // Cached bundle metadata to avoid reading ZIP multiple times
     private var bundleMetadataCache: BundleMetadata? = null
 
@@ -54,6 +56,9 @@ class LaravelEnvironment(private val context: Context) {
         private const val CACERT_FILE = "cacert.pem"
         private const val PHP_INI_FILE = "php.ini"
         private const val APP_KEY_FILE = "persisted_data/appkey.txt"
+
+        private const val FIRST_RUN_PREFERENCES = "nativephp_lifecycle"
+        private const val FIRST_RUN_KEY = "has_run"
 
         // Directory paths
         private const val DIR_LARAVEL = "laravel"
@@ -694,6 +699,23 @@ class LaravelEnvironment(private val context: Context) {
         phpBridge.runArtisanCommand("storage:unlink")
         phpBridge.runArtisanCommand("storage:link")
         phpBridge.runArtisanCommand("migrate --force")
+
+        val isFirstRun = getIsFirstRunForSession()
+        phpBridge.runArtisanCommand(
+            "native:boot --phase=blocking --first-run=${if (isFirstRun) 1 else 0}"
+        )
+    }
+
+    private fun getIsFirstRunForSession(): Boolean {
+        isFirstRunForSession?.let {
+            return it
+        }
+
+        val preferences = context.getSharedPreferences(FIRST_RUN_PREFERENCES, Context.MODE_PRIVATE)
+        val hasRun = preferences.getBoolean(FIRST_RUN_KEY, false)
+        val computed = !hasRun
+        isFirstRunForSession = computed
+        return computed
     }
 
     private fun setupDirectories() {
