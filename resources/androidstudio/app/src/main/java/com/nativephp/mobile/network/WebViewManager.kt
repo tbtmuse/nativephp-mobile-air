@@ -14,6 +14,7 @@ import android.content.pm.ActivityInfo
 import android.app.Activity
 import com.acsbendi.requestinspectorwebview.RequestInspectorWebViewClient
 import com.nativephp.mobile.bridge.PHPBridge
+import com.nativephp.mobile.lifecycle.NativePHPLifecycle
 import com.nativephp.mobile.ui.MainActivity
 import com.nativephp.mobile.ui.NativeUIState
 import org.json.JSONObject
@@ -31,6 +32,11 @@ class WebViewManager(
     companion object {
         var shared: WebViewManager? = null
     }
+
+    private var hasSignaledReady = false
+
+    private val firstRunPreferencesName = "nativephp_lifecycle"
+    private val firstRunPreferencesKey = "has_run"
 
     fun setup() {
         configureWebViewSettings()
@@ -328,6 +334,29 @@ class WebViewManager(
 
                 // Inject JavaScript to capture form submissions and AJAX requests
                 injectJavaScript(view)
+
+                if (!hasSignaledReady && url.startsWith("http://127.0.0.1")) {
+                    hasSignaledReady = true
+
+                    val preferences = context.getSharedPreferences(firstRunPreferencesName, Context.MODE_PRIVATE)
+                    val hasRun = preferences.getBoolean(firstRunPreferencesKey, false)
+                    val isFirstRun = !hasRun
+
+                    Thread {
+                        val future = phpBridge.runArtisanCommandQueued(
+                            "native:boot --phase=deferred --first-run=${if (isFirstRun) 1 else 0}"
+                        )
+
+                        try {
+                            val output = future.get()
+                            Log.d(TAG, "native:boot deferred output: ${output.take(200)}")
+                        } finally {
+                            preferences.edit().putBoolean(firstRunPreferencesKey, true).apply()
+                        }
+                    }.start()
+
+                    NativePHPLifecycle.post(NativePHPLifecycle.Events.WEBVIEW_READY)
+                }
             }
         }
     }

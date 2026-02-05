@@ -146,5 +146,6 @@ object NativePHPLifecycle {
         const val ON_NEW_INTENT = "onNewIntent"
         const val ON_PERMISSION_RESULT = "onPermissionResult"
         const val ON_CONFIGURATION_CHANGED = "onConfigurationChanged"
+        const val WEBVIEW_READY = "webviewReady"
     }
 }

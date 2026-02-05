@@ -33,6 +33,12 @@ class PHPBridge(private val context: Context) {
         scriptPath: String
     ): String
 
+    fun runArtisanCommandQueued(command: String): java.util.concurrent.Future<String> {
+        return phpExecutor.submit<String> {
+            runArtisanCommand(command)
+        }
+    }
+
 
     companion object {
         private const val TAG = "PHPBridge"
