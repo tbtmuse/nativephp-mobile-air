@@ -202,6 +202,9 @@ struct WebView: UIViewRepresentable {
             // On first load, dismiss the splash screen
             if !hasCompletedInitialLoad {
                 hasCompletedInitialLoad = true
+
+                NativePHPApp.shared?.runDeferredBootTasks()
+
                 DispatchQueue.main.async {
                     AppState.shared.markInitialized()
                 }

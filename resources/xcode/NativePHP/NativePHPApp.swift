@@ -19,6 +19,8 @@ struct NativePHPApp: App {
     @StateObject private var appState = AppState.shared
 
     static var shared: NativePHPApp?
+    private static let firstRunDefaultsKey = "nativephp_lifecycle.has_run"
+    private static let phpExecutionLock = NSLock()
 
     init() {
         Self.shared = self
@@ -50,17 +52,21 @@ struct NativePHPApp: App {
         DebugLogger.shared.log("📱 Deferred init: creating storage symlink")
         createStorageLink()
 
-        // 4. Execute plugin initialization callbacks (on main thread)
+        // 4. Run blocking boot tasks before first WebView load
+        DebugLogger.shared.log("📱 Deferred init: running blocking boot tasks")
+        runBlockingBootTasks()
+
+        // 5. Execute plugin initialization callbacks (on main thread)
         DispatchQueue.main.async {
             NativePHPPluginRegistry.shared.executeOnAppLaunch()
         }
 
-        // 5. Start hot reload server for development
+        // 6. Start hot reload server for development
         #if DEBUG
         HotReloadServer.shared.start()
         #endif
 
-        // 6. Check for OTA updates (after everything is set up)
+        // 7. Check for OTA updates (after everything is set up)
         DebugLogger.shared.log("📱 Deferred init: checking for OTA update")
         AppUpdateManager.shared.checkForUpdates()
 
@@ -220,6 +226,26 @@ struct NativePHPApp: App {
         _ = artisan(additionalArgs: ["storage:link"])
     }
 
+    private func runBlockingBootTasks() {
+        let firstRunArg = isFirstRunForSession() ? "1" : "0"
+        let output = artisan(additionalArgs: ["native:boot", "--phase=blocking", "--first-run=\(firstRunArg)"])
+        DebugLogger.shared.log("📱 Blocking native:boot finished: \(output.prefix(200))")
+    }
+
+    func runDeferredBootTasks() {
+        let firstRunArg = isFirstRunForSession() ? "1" : "0"
+
+        DispatchQueue.global(qos: .utility).async {
+            let output = artisan(additionalArgs: ["native:boot", "--phase=deferred", "--first-run=\(firstRunArg)"])
+            DebugLogger.shared.log("📱 Deferred native:boot finished: \(output.prefix(200))")
+            UserDefaults.standard.set(true, forKey: Self.firstRunDefaultsKey)
+        }
+    }
+
+    private func isFirstRunForSession() -> Bool {
+        return !UserDefaults.standard.bool(forKey: Self.firstRunDefaultsKey)
+    }
+
     private func preparePhpEnvironment() -> String {
         let phpIniPath = createPhpIni()
 
@@ -237,6 +263,9 @@ struct NativePHPApp: App {
     }
 
     static func laravel(request: RequestData) -> String? {
+        Self.phpExecutionLock.lock()
+        defer { Self.phpExecutionLock.unlock() }
+
         // Convert Swift strings to C strings
         let postDataC = strdup(request.data ?? "")
         let methodC = strdup(request.method)
@@ -430,6 +459,9 @@ struct NativePHPApp: App {
     }
 
     func artisan(additionalArgs: [String] = []) -> String {
+        Self.phpExecutionLock.lock()
+        defer { Self.phpExecutionLock.unlock() }
+
         print("Running `php artisan \(additionalArgs.joined())`...")
 
         output = ""
