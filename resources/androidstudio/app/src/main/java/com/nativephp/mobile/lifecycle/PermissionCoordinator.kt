@@ -142,4 +142,67 @@ object PermissionCoordinator {
             }
         }, TTL_MILLIS)
     }
+
+    /**
+     * Emit a permission result for plugins that handle their own permission requests.
+     *
+     * This is the "escape hatch" for plugins using ActivityResultContracts or other
+     * modern Android APIs that initiate requests outside of core.
+     *
+     * Does NOT interact with the request registry - this is transport-only.
+     *
+     * @param permission The Android permission string (e.g., "android.permission.CAMERA")
+     * @param granted Whether the permission was granted
+     * @param source Plugin identifier (e.g., "camera", "firebase") - REQUIRED for request flows
+     * @param sourceId Correlation token - REQUIRED for request flows
+     */
+    fun emitResult(
+        permission: String,
+        granted: Boolean,
+        source: String? = null,
+        sourceId: String? = null
+    ) {
+        if (source != null && sourceId != null) {
+            Log.d(TAG, "Emitting permission result: source=$source, sourceId=$sourceId, permission=$permission, granted=$granted")
+        } else {
+            Log.d(TAG, "Emitting permission result (uncorrelated): permission=$permission, granted=$granted")
+        }
+
+        postLifecycleEvent(permission, granted, -1, source ?: "", sourceId ?: "")
+    }
+
+    /**
+     * Emit multiple permission results.
+     *
+     * Helper for plugins using RequestMultiplePermissions ActivityResultContracts.
+     * Emits one event per permission, all sharing the same source/sourceId.
+     *
+     * Does NOT interact with the request registry - this is transport-only.
+     *
+     * @param results Map of permission string to granted boolean
+     * @param source Plugin identifier - REQUIRED for request flows
+     * @param sourceId Correlation token - REQUIRED for request flows
+     */
+    fun emitResults(
+        results: Map<String, Boolean>,
+        source: String? = null,
+        sourceId: String? = null
+    ) {
+        results.forEach { (permission, granted) ->
+            emitResult(permission, granted, source, sourceId)
+        }
+    }
+
+    /**
+     * Generate a new sourceId for permission correlation.
+     *
+     * Plugins initiating their own requests should use this to ensure
+     * consistent ID generation across the system.
+     *
+     * @param prefix Optional prefix (default: "req")
+     * @return Opaque correlation token
+     */
+    fun newSourceId(prefix: String = "req"): String {
+        return "${prefix}_${UUID.randomUUID().toString().replace("-", "").substring(0, 20)}"
+    }
 }
