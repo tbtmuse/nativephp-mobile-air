@@ -8,12 +8,12 @@ use Native\Mobile\Contracts\Permissions\PermissionResultContract;
 use Native\Mobile\Contracts\Permissions\PermissionStatus;
 
 /**
- * Camera permission denied event
+ * Camera permission granted event
  *
- * This event is dispatched when camera permission is denied.
+ * This event is dispatched when camera permission is granted.
  * Implements PermissionResultContract for consistent permission handling.
  */
-final class PermissionDenied implements PermissionResultContract
+final class PermissionGranted implements PermissionResultContract
 {
     use Dispatchable;
     use SerializesModels;
@@ -41,6 +41,6 @@ final class PermissionDenied implements PermissionResultContract
 
     public function status(): PermissionStatus
     {
-        return PermissionStatus::DENIED;
+        return PermissionStatus::GRANTED;
     }
 }
