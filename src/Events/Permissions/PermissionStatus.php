@@ -1,6 +1,6 @@
 <?php declare(strict_types=1);
 
-namespace Native\Mobile\Contracts\Permissions;
+namespace Native\Mobile\Events\Permissions;
 
 /**
  * Permission status enumeration.
