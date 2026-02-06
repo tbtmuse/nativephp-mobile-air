@@ -21,6 +21,7 @@ import com.nativephp.mobile.utils.NativeActionCoordinator
 import com.nativephp.mobile.utils.WebViewProvider
 import com.nativephp.mobile.security.LaravelCookieStore
 import com.nativephp.mobile.lifecycle.NativePHPLifecycle
+import com.nativephp.mobile.lifecycle.PermissionCoordinator
 import java.io.File
 import java.net.URL
 import android.webkit.WebChromeClient
@@ -387,36 +388,8 @@ class MainActivity : FragmentActivity(), WebViewProvider {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
-        // Post lifecycle event for each permission result
-        permissions.forEachIndexed { index, permission ->
-            val granted = grantResults.getOrNull(index) == PackageManager.PERMISSION_GRANTED
-            NativePHPLifecycle.post(
-                NativePHPLifecycle.Events.ON_PERMISSION_RESULT,
-                mapOf(
-                    "permission" to permission,
-                    "granted" to granted,
-                    "requestCode" to requestCode
-                )
-            )
-        }
-
-        when (requestCode) {
-            1001 -> {
-                if ((grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)) {
-                    Log.d("Permission", "✅ Location permission granted")
-                    // Optionally re-trigger the location fetch
-                } else {
-                    Log.e("Permission", "❌ Location permission denied")
-                }
-            }
-            1002 -> {
-                if ((grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)) {
-                    Log.d("Permission", "✅ Push notification permission granted")
-                } else {
-                    Log.e("Permission", "❌ Push notification permission denied")
-                }
-            }
-        }
+        // Delegate to PermissionCoordinator for tracked requests
+        PermissionCoordinator.handleResult(requestCode, permissions, grantResults)
     }
 
     private fun startHotReloadWatcher() {
