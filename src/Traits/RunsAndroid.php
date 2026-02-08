@@ -304,6 +304,9 @@ trait RunsAndroid
         if ($this->validateXml($normalizedContents)) {
             File::put($manifestPath, $normalizedContents);
         }
+
+        // Update build.gradle.kts with BuildConfig fields
+        $this->updateBuildConfigFields($scheme, $host);
     }
 
     private function generateDeepLinkFilters(?string $scheme, ?string $host): string
@@ -883,11 +886,41 @@ XML;
         } else {
             $contents = preg_replace('/\s*android:screenOrientation="[^"]*"/', '', $contents);
         }
-
         $normalizedContents = $this->normalizeLineEndings($contents);
+
         if ($this->validateXml($normalizedContents)) {
             File::put($manifestPath, $normalizedContents);
         }
+    }
+
+    /**
+     * Update BuildConfig fields in build.gradle.kts
+     */
+    private function updateBuildConfigFields(?string $scheme, ?string $host): void
+    {
+        $gradlePath = base_path('nativephp/android/app/build.gradle.kts');
+        if (! File::exists($gradlePath)) {
+            return;
+        }
+
+        $contents = File::get($gradlePath);
+
+        // Replace scheme placeholder - simple string replacement
+        $schemeValue = $scheme ? '\\"'.$scheme.'\\"' : '\\"\\"';
+        $contents = str_replace(
+            'REPLACE_DEEPLINK_SCHEME',
+            $scheme ?? '',
+            $contents
+        );
+
+        // Replace host placeholder - simple string replacement
+        $contents = str_replace(
+            'REPLACE_DEEPLINK_HOST',
+            $host ?? '',
+            $contents
+        );
+
+        File::put($gradlePath, $contents);
     }
 
     /**

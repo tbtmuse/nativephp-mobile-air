@@ -20,6 +20,10 @@ android {
         versionCode = REPLACEMECODE
         versionName = "REPLACEME"
 
+        // Deep link configuration - replaced during build
+        buildConfigField("String", "DEEP_LINK_SCHEME", "\"REPLACE_DEEPLINK_SCHEME\"")
+        buildConfigField("String", "DEEP_LINK_HOST", "\"REPLACE_DEEPLINK_HOST\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         externalNativeBuild {
@@ -106,6 +110,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     externalNativeBuild {

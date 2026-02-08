@@ -22,6 +22,8 @@ import com.nativephp.mobile.utils.WebViewProvider
 import com.nativephp.mobile.security.LaravelCookieStore
 import com.nativephp.mobile.lifecycle.NativePHPLifecycle
 import com.nativephp.mobile.lifecycle.PermissionCoordinator
+import com.nativephp.mobile.routing.IntentPipeline
+import com.nativephp.mobile.contracts.IntentHandler
 import java.io.File
 import java.net.URL
 import android.webkit.WebChromeClient
@@ -115,12 +117,9 @@ class MainActivity : FragmentActivity(), WebViewProvider {
 
         LaravelCookieStore.init(applicationContext)
 
-        // Register bridge functions early, before PHP code can execute
-        Log.d("MainActivity", "🔌 Registering bridge functions...")
         registerBridgeFunctions(this, applicationContext)
-        Log.d("MainActivity", "✅ Bridge functions registered")
-
-        handleDeepLinkIntent(intent)
+        setupIntentPipeline()
+        IntentPipeline.dispatch(intent)
 
         // Set up Compose UI
         setContent {
@@ -250,11 +249,10 @@ class MainActivity : FragmentActivity(), WebViewProvider {
         }.start()
     }
 
-    override fun onNewIntent(intent: Intent) {
+     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        handleDeepLinkIntent(intent)
-
-        // Post lifecycle event for plugins
+        setIntent(intent)
+        IntentPipeline.dispatch(intent)
         intent.data?.let { uri ->
             NativePHPLifecycle.post(
                 NativePHPLifecycle.Events.ON_NEW_INTENT,
@@ -272,66 +270,6 @@ class MainActivity : FragmentActivity(), WebViewProvider {
         super.onPause()
         NativePHPLifecycle.post(NativePHPLifecycle.Events.ON_PAUSE)
     }
-
-    private fun handleDeepLinkIntent(intent: Intent?) {
-        val uri = intent?.data ?: return
-        Log.d("DeepLink", "🌐 Received deep link: $uri")
-
-        // Check if this is an OAuth callback from nativephp:// scheme
-        if (uri.scheme == "nativephp") {
-            Log.d("OAuth", "🔐 OAuth callback detected from scheme: ${uri.scheme}")
-            Log.d("OAuth", "🔐 OAuth callback host: ${uri.host}")
-            Log.d("OAuth", "🔐 OAuth callback path: ${uri.path}")
-            Log.d("OAuth", "🔐 OAuth callback query: ${uri.query}")
-            
-            // Check for common OAuth parameters
-            val code = uri.getQueryParameter("code")
-            val state = uri.getQueryParameter("state")
-            val error = uri.getQueryParameter("error")
-            
-            if (code != null) {
-                Log.d("OAuth", "✅ OAuth authorization code received: ${code.take(10)}...")
-            }
-            if (state != null) {
-                Log.d("OAuth", "✅ OAuth state parameter: $state")
-            }
-            if (error != null) {
-                Log.e("OAuth", "❌ OAuth error received: $error")
-            }
-        }
-
-        val query = uri.query
-        val laravelUrl = if (uri.scheme != "http" && uri.scheme != "https") {
-            // Custom scheme (e.g., myapp://profile/settings): treat host as first path segment
-            // This matches iOS behavior where the entire URI after scheme:// is the path
-            val host = uri.host ?: ""
-            val path = uri.path ?: ""
-            buildString {
-                if (host.isNotEmpty()) append("/$host")
-                if (path.isNotEmpty()) append(path) else if (host.isEmpty()) append("/")
-                if (!query.isNullOrBlank()) append("?$query")
-            }
-        } else {
-            // HTTP(S) app links: just use the path (host is the verified domain)
-            buildString {
-                append(uri.path ?: "/")
-                if (!query.isNullOrBlank()) append("?$query")
-            }
-        }
-
-        Log.d("DeepLink", "📦 Saving deep link for later: $laravelUrl")
-        pendingDeepLink = laravelUrl
-        if (::laravelEnv.isInitialized && ::webViewManager.isInitialized) {
-            // Only load immediately if both Laravel environment AND WebView are ready
-            val fullUrl = "http://127.0.0.1$laravelUrl"
-            Log.d("DeepLink", "🚀 Loading deep link immediately (app already running): $fullUrl")
-            webView.loadUrl(fullUrl)
-            pendingDeepLink = null
-        } else {
-            Log.d("DeepLink", "⏳ Deep link saved, waiting for app initialization to complete")
-        }
-    }
-
 
     private fun initializeEnvironment() {
         clearAllCookies()
@@ -373,8 +311,72 @@ class MainActivity : FragmentActivity(), WebViewProvider {
         shouldStopWatcher = true
         hotReloadWatcherThread?.interrupt()
 
+        // Clear intent pipeline
+        IntentPipeline.clear()
+
         laravelEnv.cleanup()
         phpBridge.shutdown()
+    }
+
+    private fun setupIntentPipeline() {
+        IntentPipeline.use(DeepLinkHandler(this))
+    }
+
+    private class DeepLinkHandler(private val activity: MainActivity) : IntentHandler {
+        override fun handle(intent: Intent, next: () -> Boolean): Boolean {
+            val uri = intent.data ?: return next()
+            
+            // Skip internal system URIs (notifications, OAuth, etc.)
+            if (uri.host == "internal") {
+                return next()
+            }
+            
+            // Check if this URI matches our configured deep link contract
+            if (!isDeepLinkUri(uri)) {
+                return next()
+            }
+            
+            val laravelUrl = buildLaravelUrl(uri)
+            activity.pendingDeepLink = laravelUrl
+            
+            // Load URL if WebView is ready
+            if (activity::webView.isInitialized) {
+                activity.webView.loadUrl("http://127.0.0.1$laravelUrl")
+                activity.pendingDeepLink = null
+            }
+            
+            return true
+        }
+        
+        private fun isDeepLinkUri(uri: android.net.Uri): Boolean {
+            val scheme = uri.scheme ?: return false
+            val host = uri.host ?: ""
+            
+            // Check HTTPS/App Links
+            if (scheme == "https" || scheme == "http") {
+                return host == com.nativephp.mobile.BuildConfig.DEEP_LINK_HOST
+            }
+            
+            // Check custom scheme
+            return scheme == com.nativephp.mobile.BuildConfig.DEEP_LINK_SCHEME
+        }
+        
+        private fun buildLaravelUrl(uri: android.net.Uri): String {
+            return if (uri.scheme != "http" && uri.scheme != "https") {
+                val host = uri.host ?: ""
+                val path = uri.path ?: ""
+                buildString {
+                    if (host.isNotEmpty() && host != "app") append("/$host")
+                    if (path.isNotEmpty()) append(path) else if (host.isEmpty() || host == "app") append("/")
+                    uri.query?.let { append("?$it") }
+                }
+            } else {
+                buildString {
+                    append(uri.path ?: "/")
+                    uri.query?.let { append("?$it") }
+                }
+            }
+        }
     }
 
     override fun getWebView(): WebView {
