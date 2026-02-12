@@ -17,7 +17,14 @@ class DispatchEventFromAppController
         $dispatchId = $request->get('dispatch_id');
 
         if (!$dispatchId) {
-            Log::error('[PHP] ❌ MISSING_DISPATCH_ID', ['name' => $eventClass]);
+            Log::error('[PHP] ❌ MISSING_DISPATCH_ID', [
+                'name' => $eventClass,
+                'method' => $request->method(),
+                'url' => $request->fullUrl(),
+                'all_keys' => array_keys($request->all()),
+                'body' => $request->all(),
+                'content_type' => $request->header('Content-Type'),
+            ]);
 
             return response()->json([
                 'success' => false,

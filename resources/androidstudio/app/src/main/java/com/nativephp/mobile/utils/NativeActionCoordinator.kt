@@ -5,6 +5,8 @@ import android.webkit.WebView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
+import com.nativephp.mobile.network.PHPRequest
+import com.nativephp.mobile.network.WebViewManager
 import org.json.JSONObject
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -71,29 +73,38 @@ class NativeActionCoordinator : Fragment() {
                     if (window.Livewire && typeof window.Livewire.dispatch === 'function') {
                         window.Livewire.dispatch("native:$eventForJs", { event: eventEnvelope });
                     }
-
-                    fetch('/_native/api/events', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest'
-                        },
-                        body: JSON.stringify(eventEnvelope)
-                    }).then(response => response.json())
-                      .then(data => {
-                          if (data.message && data.message.includes("Unknown named parameter")) {
-                              console.log("API Event Dispatch: Parameter issue detected");
-                          } else {
-                              console.log("API Event Dispatch Success");
-                          }
-                      })
-                      .catch(error => console.error("API Event Dispatch Error:", error.message));
                 })();
             """.trimIndent()
 
             Log.d("NativeActionCoordinator", "📢 Dispatching JS event: $event")
 
             (activity as? WebViewProvider)?.getWebView()?.evaluateJavascript(js, null)
+
+            // Dispatch to Laravel's global event system directly via PHPBridge,
+            // bypassing the WebView fetch interceptor to avoid the lastPostData race condition
+            // where Livewire's fetch and native event fetch overwrite each other's POST body.
+            Thread {
+                try {
+                    val phpBridge = WebViewManager.shared?.phpBridge
+                    if (phpBridge != null) {
+                        val request = PHPRequest(
+                            url = "/_native/api/events",
+                            method = "POST",
+                            body = envelopeJson,
+                            headers = mapOf(
+                                "Content-Type" to "application/json",
+                                "X-Requested-With" to "XMLHttpRequest"
+                            )
+                        )
+                        val response = phpBridge.handleLaravelRequest(request)
+                        Log.d("NativeActionCoordinator", "✅ Direct PHP dispatch success for: $event")
+                    } else {
+                        Log.w("NativeActionCoordinator", "⚠️ PHPBridge not available, skipping direct dispatch for: $event")
+                    }
+                } catch (e: Exception) {
+                    Log.e("NativeActionCoordinator", "❌ Direct PHP dispatch failed for: $event — ${e.message}")
+                }
+            }.start()
         }
 
 
