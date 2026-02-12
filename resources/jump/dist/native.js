@@ -1481,8 +1481,8 @@ function setupNativeEventListener() {
     }
 
     document.addEventListener("native-event", function (e) {
-        let eventName = e.detail.event.replace(/^(\\\\)+/, '');
-        const payload = e.detail.payload;
+        let eventName = e.detail.name.replace(/^(\\\\)+/, '');
+        const payload = e.detail.event;
 
         // Dispatch to our listeners
         const cbs = _eventListeners[eventName] || [];

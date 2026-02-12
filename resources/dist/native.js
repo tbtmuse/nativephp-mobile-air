@@ -904,8 +904,8 @@ function setupNativeEventListener() {
     }
 
     document.addEventListener("native-event", function (e) {
-        let eventName = e.detail.event.replace(/^(\\\\)+/, '');
-        const payload = e.detail.payload;
+        let eventName = e.detail.name.replace(/^(\\\\)+/, '');
+        const payload = e.detail.event;
 
         const cbs = _eventListeners[eventName] || [];
         cbs.forEach(cb => cb(payload, eventName));

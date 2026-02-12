@@ -6,11 +6,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import org.json.JSONObject
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 interface WebViewProvider {
     fun getWebView(): WebView
 }
 
+@OptIn(ExperimentalUuidApi::class)
 class NativeActionCoordinator : Fragment() {
 
     // File picker launcher
@@ -20,7 +23,7 @@ class NativeActionCoordinator : Fragment() {
             val payload = JSONObject().apply {
                 put("uri", uri.toString())
             }
-            dispatch("file:chosen", payload.toString())
+            dispatch("file:chosen", buildEnvelope("file:chosen", "file", null, payload))
         }
 
     fun launchFilePicker(mime: String = "*/*") {
@@ -49,24 +52,24 @@ class NativeActionCoordinator : Fragment() {
             }
 
             // Dispatch the event back to PHP with custom event class
-            dispatch(finalEventClass, payload.toString())
+            dispatch(finalEventClass, buildEnvelope(finalEventClass, "alert", id, payload))
         }
     }
 
-    private fun dispatch(event: String, payloadJson: String) {
+    private fun dispatch(event: String, envelopeJson: String) {
             Log.d("JSFUNC", "native:$event");
-            Log.d("JSFUNC", "$payloadJson");
+            Log.d("JSFUNC", "$envelopeJson");
             val eventForJs = event.replace("\\", "\\\\")
             val js = """
                 (function () {
-                    const payload = $payloadJson;
+                    const eventEnvelope = $envelopeJson;
 
-                    const detail = { event: "$eventForJs", payload };
+                    const detail = { name: "$eventForJs", event: "$eventForJs", payload: eventEnvelope.payload || {} };
 
                     document.dispatchEvent(new CustomEvent("native-event", { detail }));
 
                     if (window.Livewire && typeof window.Livewire.dispatch === 'function') {
-                        window.Livewire.dispatch("native:$eventForJs", payload);
+                        window.Livewire.dispatch("native:$eventForJs", { event: eventEnvelope });
                     }
 
                     fetch('/_native/api/events', {
@@ -75,10 +78,7 @@ class NativeActionCoordinator : Fragment() {
                             'Content-Type': 'application/json',
                             'X-Requested-With': 'XMLHttpRequest'
                         },
-                        body: JSON.stringify({
-                            event: "$eventForJs",
-                            payload: payload
-                        })
+                        body: JSON.stringify(eventEnvelope)
                     }).then(response => response.json())
                       .then(data => {
                           if (data.message && data.message.includes("Unknown named parameter")) {
@@ -110,10 +110,24 @@ class NativeActionCoordinator : Fragment() {
          * Dispatch an event to PHP from anywhere in the app
          * This is a helper method for activities/fragments that need to dispatch events
          */
-        fun dispatchEvent(activity: FragmentActivity, event: String, payloadJson: String) {
+        fun dispatchEvent(activity: FragmentActivity, event: String, envelopeJson: String) {
             Log.d("NativeActionCoordinator", "📢 Static dispatch event: $event")
             val coordinator = install(activity)
-            coordinator.dispatch(event, payloadJson)
+            coordinator.dispatch(event, envelopeJson)
         }
+    }
+
+    private fun buildEnvelope(name: String, source: String, sourceId: String?, payload: JSONObject): String {
+        val resolvedSourceId = sourceId?.takeIf { it.isNotBlank() } ?: Uuid.generateV7().toString()
+        val envelope = JSONObject().apply {
+            put("name", name)
+            put("source", source)
+            put("source_id", resolvedSourceId)
+            put("dispatch_id", Uuid.generateV7().toString())
+            put("sent_at", System.currentTimeMillis())
+            put("payload", payload)
+            put("meta", JSONObject())
+        }
+        return envelope.toString()
     }
 }

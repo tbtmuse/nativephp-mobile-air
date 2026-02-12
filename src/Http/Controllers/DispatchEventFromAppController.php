@@ -1,29 +1,120 @@
-<?php
+<?php declare(strict_types=1);
 
 namespace Native\Mobile\Http\Controllers;
 
+use Throwable;
 use Illuminate\Http\Request;
+use InvalidArgumentException;
+use Illuminate\Support\Facades\Log;
+use Native\Mobile\Contracts\NativeEvent;
+use Native\Mobile\Contracts\NativeEventEnvelope;
 
 class DispatchEventFromAppController
 {
     public function __invoke(Request $request)
     {
-        $event = $request->get('event');
-        $payload = $request->get('payload', []);
+        $eventClass = $request->get('name');
+        $dispatchId = $request->get('dispatch_id');
 
-        if (class_exists($event)) {
-            $event = new $event(...$payload);
-            event($event);
-
-            return response()->json([
-                'success' => true,
-            ]);
-
-        } else {
+        if (!$dispatchId) {
+            Log::error('[PHP] ❌ MISSING_DISPATCH_ID', ['name' => $eventClass]);
 
             return response()->json([
                 'success' => false,
+                'error' => 'dispatch_id is required',
+            ], 400);
+        }
+
+        try {
+            $envelope = NativeEventEnvelope::fromArray($request->all());
+        } catch (InvalidArgumentException $e) {
+            Log::error('[PHP] ❌ INVALID_ENVELOPE', [
+                'dispatch_id' => $dispatchId,
+                'error' => $e->getMessage(),
             ]);
+
+            return response()->json([
+                'success' => false,
+                'dispatch_id' => $dispatchId,
+                'error' => $e->getMessage(),
+            ], 400);
+        }
+
+        Log::debug('[PHP] 📥 ENTRYPOINT', [
+            'dispatch_id' => $envelope->dispatchId,
+            'source' => $envelope->source,
+            'source_id' => $envelope->sourceId,
+            'name' => $envelope->name,
+            'sent_at' => $envelope->sentAt,
+            'time' => time(),
+        ]);
+
+        if (!class_exists($eventClass)) {
+            Log::error('[PHP] ❌ CLASS_NOT_FOUND', [
+                'dispatch_id' => $dispatchId,
+                'name' => $eventClass,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'dispatch_id' => $dispatchId,
+                'error' => 'Event class not found',
+            ], 404);
+        }
+
+        if (!in_array(NativeEvent::class, class_implements($eventClass) ?: [], true)) {
+            Log::error('[PHP] ❌ INVALID_EVENT_CONTRACT', [
+                'dispatch_id' => $dispatchId,
+                'name' => $eventClass,
+                'error' => 'Event must implement NativeEvent',
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'dispatch_id' => $dispatchId,
+                'error' => 'Event must implement NativeEvent',
+            ], 400);
+        }
+
+        Log::debug('[PHP] 📦 PAYLOAD_KEYS', ['keys' => array_keys($envelope->payload)]);
+
+        try {
+            $eventInstance = $eventClass::fromNativeEventEnvelope($envelope, $envelope->payload);
+        } catch (Throwable $e) {
+            Log::error('[PHP] ❌ EVENT_INSTANTIATION_FAILED', [
+                'dispatch_id' => $dispatchId,
+                'name' => $eventClass,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'dispatch_id' => $dispatchId,
+                'error' => 'Failed to instantiate event: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        try {
+            event($eventInstance);
+
+            Log::debug('[PHP] ✅ DISPATCHED', ['dispatch_id' => $dispatchId]);
+
+            return response()->json([
+                'success' => true,
+                'dispatch_id' => $dispatchId,
+            ]);
+        } catch (Throwable $e) {
+            Log::error('[PHP] ❌ EVENT_DISPATCH_FAILED', [
+                'dispatch_id' => $dispatchId,
+                'name' => $eventClass,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'dispatch_id' => $dispatchId,
+                'error' => 'Failed to dispatch event: ' . $e->getMessage(),
+            ], 500);
         }
     }
 }

@@ -389,12 +389,10 @@ class WebViewManager(
             window.Native = Native;
 
             document.addEventListener("native-event", function (e) {
-                const eventName = e.detail.event;
+                const eventName = e.detail.name || e.detail.event || '';
                 const payload = e.detail.payload;
 
                 window.Native.dispatch(eventName, payload);
-
-
             });
 
             // Capture form submissions
@@ -528,9 +526,6 @@ class JSBridge(private val phpBridge: PHPBridge, private val TAG: String) {
 
         // Store in phpBridge with the key
         phpBridge.storeRequestData(requestKey, data)
-
-        // Set as current request
-//        phpBridge.storeCurrentRequestKey(requestKey)
 
         // Try to extract CSRF token
         LaravelSecurity.extractFromPostBody(data)

@@ -100,14 +100,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs += listOf(
-            "-Xsuppress-version-warnings"
-        )
-        allWarningsAsErrors = false
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
@@ -156,6 +148,14 @@ android {
         getByName("main") {
             jniLibs.srcDirs("src/main/jniLibs")
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget("17")
+        freeCompilerArgs.add("-Xsuppress-version-warnings")
+        allWarningsAsErrors = false
     }
 }
 

@@ -6,7 +6,8 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.fragment.app.FragmentActivity
-import java.util.UUID
+import kotlin.uuid.Uuid
+import kotlin.uuid.ExperimentalUuidApi
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -15,12 +16,14 @@ import java.util.concurrent.ConcurrentHashMap
  * Manages request code allocation, correlation tracking, and result routing
  * to eliminate collisions and provide deterministic request/result correlation.
  */
+@OptIn(ExperimentalUuidApi::class)
 object PermissionCoordinator {
     private const val TAG = "PermissionCoordinator"
     private const val TTL_MILLIS = 30000L // 30 seconds
 
     private val registry = ConcurrentHashMap<Int, RegistryEntry>()
-    private val callbacks = ConcurrentHashMap<Int, PermissionCallback>()
+    private val callbacks = ConcurrentHashMap<Int, OnEachResultCallback>()
+    private val completeCallbacks = ConcurrentHashMap<Int, OnCompleteCallback>()
     private val requestCodeCounter = java.util.concurrent.atomic.AtomicInteger(10000)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val cleanupHandler = Handler(Looper.getMainLooper())
@@ -32,9 +35,18 @@ object PermissionCoordinator {
         val timestamp: Long
     )
 
-    fun interface PermissionCallback {
-        fun onResult(permission: String, granted: Boolean, sourceId: String, source: String)
+    fun interface OnEachResultCallback {
+        fun onEachResult(permission: String, granted: Boolean, sourceId: String, source: String)
     }
+    
+    fun interface OnCompleteCallback {
+        fun onComplete(results: List<PermissionResult>, sourceId: String, source: String)
+    }
+    
+    data class PermissionResult(
+        val permission: String,
+        val granted: Boolean
+    )
 
     /**
      * Request permissions through the coordinator.
@@ -42,17 +54,19 @@ object PermissionCoordinator {
      * @param activity The FragmentActivity to request from
      * @param permissions Array of Android permission strings
      * @param source Plugin identifier (e.g., "camera", "firebase")
-     * @param callback Callback invoked for each permission result
+     * @param onEachResult Optional callback invoked for each permission result (progressive UI)
+     * @param onComplete Required callback invoked once with all results when request completes
      * @return sourceId Unique correlation token for this request
      */
     fun request(
         activity: FragmentActivity,
         permissions: Array<String>,
         source: String,
-        callback: PermissionCallback
+        onEachResult: OnEachResultCallback? = null,
+        onComplete: OnCompleteCallback
     ): String {
-        val sourceId = generateSourceId()
-        val requestCode = nextRequestCode()
+        val sourceId = Uuid.generateV7().toString()
+        val requestCode = requestCodeCounter.incrementAndGet()
 
         registry[requestCode] = RegistryEntry(
             source = source,
@@ -60,7 +74,8 @@ object PermissionCoordinator {
             permissions = permissions.toList(),
             timestamp = System.currentTimeMillis()
         )
-        callbacks[requestCode] = callback
+        onEachResult?.let { callbacks[requestCode] = it }
+        completeCallbacks[requestCode] = onComplete
 
         scheduleCleanup(requestCode)
 
@@ -82,28 +97,46 @@ object PermissionCoordinator {
         grantResults: IntArray
     ) {
         val entry = registry.remove(requestCode)
-        val callback = callbacks.remove(requestCode)
+        val eachCallback = callbacks.remove(requestCode)
+        val completeCallback = completeCallbacks.remove(requestCode)
 
-        if (entry == null || callback == null) {
+        if (entry == null || completeCallback == null) {
             Log.w(TAG, "Received permission result for unknown requestCode=$requestCode (not tracked by coordinator)")
             return
         }
 
         Log.d(TAG, "Handling permission result: requestCode=$requestCode, source=${entry.source}, sourceId=${entry.sourceId}")
 
+        // Build results list for onComplete
+        val results = mutableListOf<PermissionResult>()
+
         permissions.forEachIndexed { index, permission ->
             val granted = grantResults.getOrNull(index) == PackageManager.PERMISSION_GRANTED
+            
+            results.add(PermissionResult(permission, granted))
 
-            mainHandler.post {
-                callback.onResult(
-                    permission = permission,
-                    granted = granted,
-                    sourceId = entry.sourceId,
-                    source = entry.source
-                )
+            // Call onEachResult if provided (for progressive UI)
+            eachCallback?.let { callback ->
+                mainHandler.post {
+                    callback.onEachResult(
+                        permission = permission,
+                        granted = granted,
+                        sourceId = entry.sourceId,
+                        source = entry.source
+                    )
+                }
             }
 
             postLifecycleEvent(permission, granted, requestCode, entry.source, entry.sourceId)
+        }
+        
+        // Call onComplete with all results (THE KEY FIX)
+        mainHandler.post {
+            completeCallback.onComplete(
+                results = results,
+                sourceId = entry.sourceId,
+                source = entry.source
+            )
         }
     }
 
@@ -125,20 +158,13 @@ object PermissionCoordinator {
         NativePHPLifecycle.post(NativePHPLifecycle.Events.ON_PERMISSION_RESULT, payload)
     }
 
-    private fun generateSourceId(): String {
-        return "req_${UUID.randomUUID().toString().replace("-", "").substring(0, 20)}"
-    }
-
-    private fun nextRequestCode(): Int {
-        return requestCodeCounter.incrementAndGet()
-    }
-
     private fun scheduleCleanup(requestCode: Int) {
         cleanupHandler.postDelayed({
             if (registry.containsKey(requestCode)) {
                 Log.w(TAG, "TTL cleanup: removing abandoned requestCode=$requestCode")
                 registry.remove(requestCode)
                 callbacks.remove(requestCode)
+                completeCallbacks.remove(requestCode)
             }
         }, TTL_MILLIS)
     }
@@ -199,10 +225,9 @@ object PermissionCoordinator {
      * Plugins initiating their own requests should use this to ensure
      * consistent ID generation across the system.
      *
-     * @param prefix Optional prefix (default: "req")
-     * @return Opaque correlation token
+     * @return Opaque correlation token (UUID v7)
      */
-    fun newSourceId(prefix: String = "req"): String {
-        return "${prefix}_${UUID.randomUUID().toString().replace("-", "").substring(0, 20)}"
+    fun newSourceId(): String {
+        return Uuid.generateV7().toString()
     }
 }

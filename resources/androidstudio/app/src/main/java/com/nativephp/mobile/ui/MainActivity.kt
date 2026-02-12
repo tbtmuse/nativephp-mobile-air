@@ -490,17 +490,11 @@ class MainActivity : FragmentActivity(), WebViewProvider {
             window.Native = Native;
 
             document.addEventListener("native-event", function (e) {
-                // Normalize event names by removing leading backslashes
-                let eventName = e.detail.event.replace(/^(\\\\)+/, '');
+                const eventName = e.detail.name || e.detail.event || '';
                 const payload = e.detail.payload;
 
-                // Dispatch with normalized event name
+                // Dispatch to Native bridge listeners
                 Native.dispatch(eventName, payload);
-
-                // Also dispatch to Livewire if available
-                if (window.Livewire && typeof window.Livewire.dispatch === 'function') {
-                    window.Livewire.dispatch('native:' + eventName, payload);
-                }
             });
         })();
         """
