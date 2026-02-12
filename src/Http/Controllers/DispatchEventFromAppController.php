@@ -83,8 +83,6 @@ class DispatchEventFromAppController
             ], 400);
         }
 
-        Log::debug('[PHP] 📦 PAYLOAD_KEYS', ['keys' => array_keys($envelope->payload)]);
-
         try {
             $eventInstance = $eventClass::fromNativeEventEnvelope($envelope, $envelope->payload);
         } catch (Throwable $e) {
