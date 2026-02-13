@@ -303,7 +303,7 @@ class LaravelEnvironment(private val context: Context) {
         var bifrostAppId: String? = null
 
         try {
-            val zis = ZipInputStream(context.assets.open(BUNDLE_ZIP) as java.io.InputStream)
+            val zis = ZipInputStream(context.assets.open(BUNDLE_ZIP))
             var entry: ZipEntry?
 
             // Single pass through ZIP - read both .env and .version
