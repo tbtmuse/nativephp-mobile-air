@@ -258,6 +258,7 @@ struct NativePHPApp: App {
         override_embed_module_output(pipe_php_output)
 
         createDatabase()
+        migrateDatabase()
 
         return output
     }
@@ -370,6 +371,7 @@ struct NativePHPApp: App {
         _ = getAppSupportDir(dir: "storage/framework/cache")
         _ = getAppSupportDir(dir: "storage/framework/sessions")
         _ = getAppSupportDir(dir: "storage/logs")
+        let phpSessionsDir = getAppSupportDir(dir: "php_sessions")
 
         // Get temporary directory
         let tempDir = FileManager.default.temporaryDirectory.path
@@ -379,6 +381,14 @@ struct NativePHPApp: App {
         setenv("LARAVEL_STORAGE_PATH", storageDir, 1)
         setenv("VIEW_COMPILED_PATH", viewCacheDir, 1)
         setenv("DB_DATABASE", "\(databaseDir)/database.sqlite", 1)
+
+        // Session settings (matches Android configuration)
+        setenv("SESSION_DRIVER", "file", 1)
+        setenv("SESSION_DOMAIN", "127.0.0.1", 1)
+        setenv("SESSION_SECURE_COOKIE", "false", 1)
+        setenv("SESSION_HTTP_ONLY", "true", 1)
+        setenv("SESSION_SAME_SITE", "lax", 1)
+        setenv("SESSION_SAVE_PATH", "\(phpSessionsDir)", 1)
 
         // Set APP_KEY from secure storage (generates on first run)
         if let appKey = getOrGenerateAppKey() {
