@@ -143,58 +143,35 @@ class BuildIosAppCommand extends Command
     private function copyLaravelAppIntoIosApp()
     {
         $destination = $this->appPath;
+        $source = rtrim(str_replace('\\', '/', base_path()), '/').'/';
 
         // Make sure we clear out any old version
         shell_exec("rm -rf {$destination}/*");
 
-        $source = rtrim(str_replace('\\', '/', base_path()), '/').'/';
+        // Use rsync for efficient copying without loading all files into memory
+        // Exclusions mirror Android approach to prevent memory exhaustion
+        $excludedDirs = [
+            'vendor',
+            'node_modules',
+            'nativephp',
+            'output',
+            'build',
+            'dist',
+            'artifacts',
+            '.git',
+            'storage/logs',
+            'storage/framework/cache',
+            'vendor/nativephp/mobile/resources',
+            'vendor/nativephp/mobile/vendor',
+        ];
 
-        $visitedRealPaths = [];
-        $files = [];
+        $excludeFlags = implode(' ', array_map(fn ($d) => "--exclude='{$d}'", $excludedDirs));
+        $cmd = "rsync -aL {$excludeFlags} \"{$source}/\" \"{$destination}/\"";
 
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator(
-                $source,
-                \RecursiveDirectoryIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS
-            ),
-            \RecursiveIteratorIterator::LEAVES_ONLY
-        );
+        exec($cmd, $output, $exitCode);
 
-        foreach ($iterator as $file) {
-            $realPath = $file->getRealPath();
-
-            // Skip if we've already visited this real path (prevents infinite loops from circular symlinks)
-            if ($realPath === false || isset($visitedRealPaths[$realPath])) {
-                continue;
-            }
-
-            $visitedRealPaths[$realPath] = true;
-            $files[] = $file;
-        }
-
-        foreach ($files as $file) {
-            // Where the *link* lives (keeps relative paths correct)
-            $logicalPath = str_replace('\\', '/', $file->getPathname());
-            // Where the link **points** (or the same file if not a link)
-            $realPath = str_replace('\\', '/', $file->getRealPath());
-
-            $relativePath = ltrim(substr($logicalPath, strlen($source)), '/');
-
-            if (Str::startsWith($relativePath, 'vendor/nativephp/mobile/resources') ||
-                Str::startsWith($relativePath, 'vendor/nativephp/mobile/vendor') ||
-                Str::startsWith($relativePath, 'nativephp') ||
-                Str::startsWith($relativePath, 'output/') ||
-                Str::startsWith($relativePath, 'build/') ||
-                Str::startsWith($relativePath, 'dist/') ||
-                Str::startsWith($relativePath, 'artifacts/') ||
-                Str::startsWith($relativePath, '.git/') ||
-                Str::startsWith($relativePath, 'storage/logs/') ||
-                Str::startsWith($relativePath, 'storage/framework/cache/')) {
-                continue;
-            }
-
-            @File::makeDirectory(dirname($destination.$relativePath), recursive: true, force: true);
-            @File::copy($realPath, $destination.$relativePath);
+        if ($exitCode !== 0) {
+            throw new \Exception("rsync failed with exit code {$exitCode}");
         }
     }
 
