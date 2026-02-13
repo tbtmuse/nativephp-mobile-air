@@ -15,6 +15,53 @@ interface WebViewProvider {
     fun getWebView(): WebView
 }
 
+/**
+ * Data class representing a native event envelope
+ * Matches iOS NativeEventEnvelope for cross-platform consistency
+ */
+@OptIn(ExperimentalUuidApi::class)
+data class NativeEventEnvelope(
+    val name: String,
+    val source: String,
+    val sourceId: String,
+    val dispatchId: String,
+    val sentAt: Long,
+    val payload: JSONObject,
+    val meta: JSONObject = JSONObject()
+) {
+    companion object {
+        fun build(
+            name: String,
+            source: String,
+            sourceId: String?,
+            payload: JSONObject,
+            meta: JSONObject = JSONObject()
+        ): NativeEventEnvelope {
+            return NativeEventEnvelope(
+                name = name,
+                source = source,
+                sourceId = sourceId?.takeIf { it.isNotBlank() } ?: Uuid.generateV7().toString(),
+                dispatchId = Uuid.generateV7().toString(),
+                sentAt = System.currentTimeMillis(),
+                payload = payload,
+                meta = meta
+            )
+        }
+    }
+
+    fun toJson(): String {
+        return JSONObject().apply {
+            put("name", name)
+            put("source", source)
+            put("source_id", sourceId)
+            put("dispatch_id", dispatchId)
+            put("sent_at", sentAt)
+            put("payload", payload)
+            put("meta", meta)
+        }.toString()
+    }
+}
+
 @OptIn(ExperimentalUuidApi::class)
 class NativeActionCoordinator : Fragment() {
 

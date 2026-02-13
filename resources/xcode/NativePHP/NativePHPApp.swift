@@ -249,7 +249,7 @@ struct NativePHPApp: App {
     private func preparePhpEnvironment() -> String {
         let phpIniPath = createPhpIni()
 
-        setenv("PHPRC", phpIniPath, 1)
+        Self.setEnvOrEmpty("PHPRC", phpIniPath)
 
         setupEnvironment()
 
@@ -263,6 +263,14 @@ struct NativePHPApp: App {
         return output
     }
 
+    // MARK: - Environment Variable Helpers
+    
+    /// Safely set an environment variable, converting Swift optionals to empty strings.
+    /// This prevents crashes when passing nil to setenv() which expects non-null C strings.
+    private static func setEnvOrEmpty(_ key: String, _ value: String?) {
+        setenv(key, value ?? "", 1)
+    }
+    
     static func laravel(request: RequestData) -> String? {
         Self.phpExecutionLock.lock()
         defer { Self.phpExecutionLock.unlock() }
@@ -301,16 +309,16 @@ struct NativePHPApp: App {
             uri += "?" + query
         }
 
-        setenv("REMOTE_ADDR", "0.0.0.0", 1)
-        setenv("REQUEST_URI", uri, 1)
-        setenv("QUERY_STRING", request.query, 1);
-        setenv("REQUEST_METHOD", request.method, 1)
-        setenv("SCRIPT_FILENAME", phpFilePath, 1)
-        setenv("PHP_SELF", "/native.php", 1)
-        setenv("HTTP_HOST", "127.0.0.1", 1)
-        setenv("ASSET_URL", "php://127.0.0.1/_assets/", 1)
-        setenv("NATIVEPHP_RUNNING", "true", 1)
-        setenv("APP_URL", "php://127.0.0.1", 1)
+        Self.setEnvOrEmpty("REMOTE_ADDR", "0.0.0.0")
+        Self.setEnvOrEmpty("REQUEST_URI", uri)
+        Self.setEnvOrEmpty("QUERY_STRING", request.query)
+        Self.setEnvOrEmpty("REQUEST_METHOD", request.method)
+        Self.setEnvOrEmpty("SCRIPT_FILENAME", phpFilePath)
+        Self.setEnvOrEmpty("PHP_SELF", "/native.php")
+        Self.setEnvOrEmpty("HTTP_HOST", "127.0.0.1")
+        Self.setEnvOrEmpty("ASSET_URL", "php://127.0.0.1/_assets/")
+        Self.setEnvOrEmpty("NATIVEPHP_RUNNING", "true")
+        Self.setEnvOrEmpty("APP_URL", "php://127.0.0.1")
 
         var envKeys: [String] = []
 
@@ -376,23 +384,23 @@ struct NativePHPApp: App {
         // Get temporary directory
         let tempDir = FileManager.default.temporaryDirectory.path
 
-        setenv("NATIVEPHP_PLATFORM", "ios", 1)
-        setenv("NATIVEPHP_TEMPDIR", tempDir, 1)
-        setenv("LARAVEL_STORAGE_PATH", storageDir, 1)
-        setenv("VIEW_COMPILED_PATH", viewCacheDir, 1)
-        setenv("DB_DATABASE", "\(databaseDir)/database.sqlite", 1)
+        Self.setEnvOrEmpty("NATIVEPHP_PLATFORM", "ios")
+        Self.setEnvOrEmpty("NATIVEPHP_TEMPDIR", tempDir)
+        Self.setEnvOrEmpty("LARAVEL_STORAGE_PATH", storageDir)
+        Self.setEnvOrEmpty("VIEW_COMPILED_PATH", viewCacheDir)
+        Self.setEnvOrEmpty("DB_DATABASE", "\(databaseDir)/database.sqlite")
 
         // Session settings (matches Android configuration)
-        setenv("SESSION_DRIVER", "file", 1)
-        setenv("SESSION_DOMAIN", "127.0.0.1", 1)
-        setenv("SESSION_SECURE_COOKIE", "false", 1)
-        setenv("SESSION_HTTP_ONLY", "true", 1)
-        setenv("SESSION_SAME_SITE", "lax", 1)
-        setenv("SESSION_SAVE_PATH", "\(phpSessionsDir)", 1)
+        Self.setEnvOrEmpty("SESSION_DRIVER", "file")
+        Self.setEnvOrEmpty("SESSION_DOMAIN", "127.0.0.1")
+        Self.setEnvOrEmpty("SESSION_SECURE_COOKIE", "false")
+        Self.setEnvOrEmpty("SESSION_HTTP_ONLY", "true")
+        Self.setEnvOrEmpty("SESSION_SAME_SITE", "lax")
+        Self.setEnvOrEmpty("SESSION_SAVE_PATH", "\(phpSessionsDir)")
 
         // Set APP_KEY from secure storage (generates on first run)
         if let appKey = getOrGenerateAppKey() {
-            setenv("APP_KEY", appKey, 1)
+            Self.setEnvOrEmpty("APP_KEY", appKey)
         }
     }
 
@@ -482,8 +490,8 @@ struct NativePHPApp: App {
             strdup("php")
         ]
 
-        setenv("PHP_SELF", "artisan.php", 1)
-        setenv("APP_RUNNING_IN_CONSOLE", "true", 1)
+        Self.setEnvOrEmpty("PHP_SELF", "artisan.php")
+        Self.setEnvOrEmpty("APP_RUNNING_IN_CONSOLE", "true")
 
         let additionalCArgs = additionalArgs.map { strdup($0) }
         argv.append(contentsOf: additionalCArgs)

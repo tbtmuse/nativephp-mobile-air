@@ -250,71 +250,82 @@ struct WebView: UIViewRepresentable {
         }
 
         @MainActor
-        func notifyLaravel(
-            event: String,
-            payload: [String: Any]
-        ) {
-            let event: String = {
-                let data = try! JSONSerialization.data(withJSONObject: [event])
-                var literal = String(data: data, encoding: .utf8)!
-                literal.removeFirst()
-                literal.removeLast()
-                return literal
-            }()
-
-            // 1. Inject JS event into the current web page
-            if let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []),
-               let jsonString = String(data: jsonData, encoding: .utf8) {
-
-                let js = """
+        static func dispatchEvent(event: String, envelopeJson: String) {
+            print("📢 Static dispatch event: \(event)")
+            
+            // Send envelope directly to PHP backend
+            let request = RequestData(
+                method: "POST",
+                uri: "php://127.0.0.1/_native/api/events",
+                data: envelopeJson,
+                query: "",
+                headers: [
+                    "Content-Type": "application/json",
+                    "X-Requested-With": "XMLHttpRequest"
+                ]
+            )
+            
+            _ = NativePHPApp.laravel(request: request)
+            
+            // Also inject JS event for Livewire if coordinator exists
+            if let coordinator = SharedWebView.shared.coordinator {
+                let jsEvent = """
                 (function() {
-                    const event = new CustomEvent(
-                        "native-event",
-                        {
-                            detail: {
-                                event: \(event),
-                                payload: \(jsonString),
-                            },
-                        }
-                    );
-                    document.dispatchEvent(event);
-
-                    fetch('/_native/api/events', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest'
-                        },
-                        body: JSON.stringify({
-                            event: \(event),
-                            payload: \(jsonString),
-                        })
-                    }).then(response => response.json())
-                      .then(data => console.log("API Event Dispatch Success:", JSON.stringify(data, null, 2)))
-                      .catch(error => console.error("API Event Dispatch Error:", error));
+                    const eventEnvelope = \(envelopeJson);
+                    const detail = { 
+                        name: "\(event)", 
+                        event: "\(event)", 
+                        payload: eventEnvelope.payload || {} 
+                    };
+                    document.dispatchEvent(new CustomEvent("native-event", { detail }));
                 })();
                 """
-
-                self.webView?.evaluateJavaScript(js) { result, error in
-                    if let error = error {
-                        print("JavaScript injection error injecting event '\(event)': \(error)")
-                    } else {
-                        print("JavaScript event '\(event)' dispatched.")
-                    }
-                }
-
-                // FUTURE: Send a request to Laravel backend directly
-//                let request = RequestData(
-//                    method: "POST",
-//                    uri: "php://127.0.0.1/_native/api/events",
-//                    data: jsonString,
-//                    headers: [
-//                        "Content-Type": "application/json"
-//                    ])
-//
-//                _ = NativePHPApp.laravel(request: request)
-
+                coordinator.webView?.evaluateJavaScript(jsEvent)
             }
+        }
+
+        @MainActor
+        func notifyLaravel(
+            event: String,
+            envelopeJson: String
+        ) {
+            guard !envelopeJson.isEmpty else {
+                print("Empty envelope for event: \(event)")
+                return
+            }
+
+            // Inject JS event for Livewire listeners (uses original event name)
+            let jsEvent = """
+            (function() {
+                const eventEnvelope = \(envelopeJson);
+                const detail = { 
+                    name: "\(event)", 
+                    event: "\(event)", 
+                    payload: eventEnvelope.payload || {} 
+                };
+                document.dispatchEvent(new CustomEvent("native-event", { detail }));
+            })();
+            """
+
+            self.webView?.evaluateJavaScript(jsEvent) { _, error in
+                if let error = error {
+                    print("JavaScript injection error for event '\(event)': \(error)")
+                }
+            }
+
+            // Send envelope directly to PHP backend
+            let request = RequestData(
+                method: "POST",
+                uri: "php://127.0.0.1/_native/api/events",
+                data: envelopeJson,
+                query: "",
+                headers: [
+                    "Content-Type": "application/json",
+                    "X-Requested-With": "XMLHttpRequest"
+                ]
+            )
+
+            _ = NativePHPApp.laravel(request: request)
         }
 
         @objc func reloadWebView() {
@@ -463,9 +474,9 @@ struct WebView: UIViewRepresentable {
         }
 
         // Setup Laravel bridge - use shared coordinator so it persists
-        LaravelBridge.shared.send = { [weak shared] event, payload in
+        LaravelBridge.shared.send = { [weak shared] event, envelopeJson in
             Task { @MainActor in
-                shared?.coordinator?.notifyLaravel(event: event, payload: payload as [String : Any])
+                shared?.coordinator?.notifyLaravel(event: event, envelopeJson: envelopeJson as? String ?? "")
             }
         }
 

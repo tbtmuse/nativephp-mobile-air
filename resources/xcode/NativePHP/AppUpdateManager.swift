@@ -597,9 +597,24 @@ class AppUpdateManager {
 
     private func notifyUpdateInstalled(version: String) {
         // Notify the Laravel app that an update was installed
+        let envelope = NativeEventEnvelope.build(
+            name: "Native\\Mobile\\Events\\App\\UpdateInstalled",
+            source: "app",
+            sourceId: nil,
+            payload: [
+                "version": version,
+                "timestamp": Int(Date().timeIntervalSince1970)
+            ]
+        )
+        
+        guard let envelopeJson = envelope.toJsonString() else {
+            print("Failed to serialize update event")
+            return
+        }
+        
         LaravelBridge.shared.send?(
             "Native\\Mobile\\Events\\App\\UpdateInstalled",
-            ["version": version, "timestamp": Int(Date().timeIntervalSince1970)]
+            envelopeJson
         )
 
         // Optionally show a toast or reload the WebView

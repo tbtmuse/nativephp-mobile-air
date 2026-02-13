@@ -148,22 +148,24 @@ class BuildIosAppCommand extends Command
         // Make sure we clear out any old version
         shell_exec("rm -rf {$destination}/*");
 
-        // Use rsync for efficient copying without loading all files into memory
-        // Exclusions mirror Android approach to prevent memory exhaustion
-        $excludedDirs = [
-            'vendor',
-            'node_modules',
-            'nativephp',
-            'output',
-            'build',
-            'dist',
-            'artifacts',
-            '.git',
-            'storage/logs',
-            'storage/framework/cache',
-            'vendor/nativephp/mobile/resources',
-            'vendor/nativephp/mobile/vendor',
-        ];
+        // Use config exclusions + additional required exclusions
+        $excludedDirs = array_merge(
+            config('nativephp.cleanup_exclude_files', []),
+            [
+                'vendor',
+                'node_modules',
+                'nativephp',
+                'output',
+                'build',
+                'dist',
+                'artifacts',
+                '.git',
+                'storage/logs',
+                'storage/framework/cache',
+                'vendor/nativephp/mobile/resources',
+                'vendor/nativephp/mobile/vendor',
+            ]
+        );
 
         $excludeFlags = implode(' ', array_map(fn ($d) => "--exclude='{$d}'", $excludedDirs));
         $cmd = "rsync -aL {$excludeFlags} \"{$source}/\" \"{$destination}/\"";
@@ -771,7 +773,7 @@ class BuildIosAppCommand extends Command
 
     private function removeUnnecessaryFiles(): void
     {
-
+        // Default directories to remove
         $directoriesToRemove = [
             '.git',
             '.github',
