@@ -149,21 +149,23 @@ class BuildIosAppCommand extends Command
         shell_exec("rm -rf {$destination}/*");
 
         // Use config exclusions + additional required exclusions
+        // NOTE: Use LEADING slash to exclude only root directory, not subdirectories
+        // '/vendor/' excludes root vendor/ but NOT public/vendor/
         $excludedDirs = array_merge(
             config('nativephp.cleanup_exclude_files', []),
             [
-                'vendor',
-                'node_modules',
-                'nativephp',
-                'output',
-                'build',
-                'dist',
-                'artifacts',
-                '.git',
-                'storage/logs',
-                'storage/framework/cache',
-                'vendor/nativephp/mobile/resources',
-                'vendor/nativephp/mobile/vendor',
+                '/vendor/',
+                '/node_modules/',
+                '/nativephp/',
+                '/output/',
+                '/build/',
+                '/dist/',
+                '/artifacts/',
+                '/.git/',
+                '/storage/logs/',
+                '/storage/framework/cache/',
+                '/vendor/nativephp/mobile/resources/',
+                '/vendor/nativephp/mobile/vendor/',
             ]
         );
 

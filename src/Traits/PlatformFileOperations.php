@@ -8,11 +8,14 @@ trait PlatformFileOperations
 {
     /**
      * Platform-optimized file copy operation
+     *
+     * Normalizes exclusions to use trailing slashes for rsync to prevent matching subdirectories.
+     * This is idempotent - calling on already-normalized values gives the same result.
      */
     protected function platformOptimizedCopy(string $source, string $destination, array $excludedDirs = []): void
     {
         if (PHP_OS_FAMILY === 'Windows') {
-            // Use robocopy on Windows
+            // Use robocopy on Windows (uses literal path matching, not glob)
             if (! empty($excludedDirs)) {
                 $excludeArgs = '';
                 foreach ($excludedDirs as $dir) {
@@ -31,16 +34,27 @@ trait PlatformFileOperations
             }
         } else {
             // Use rsync on Unix-like systems
-            if (! empty($excludedDirs)) {
-                // Add specific exclusions for nested vendor directories that cause rsync cycles
-                $excludedDirs[] = 'vendor/*/vendor';
-                $excludedDirs[] = 'vendor/nativephp/mobile/vendor';
-                $excludeFlags = implode(' ', array_map(fn ($d) => "--exclude='{$d}'", $excludedDirs));
-                $cmd = "rsync -aL {$excludeFlags} \"{$source}/\" \"{$destination}/\"";
-            } else {
-                $cmd = "cp -a \"{$source}/.\" \"{$destination}/\"";
+            // IMPORTANT: Use LEADING slash to exclude only root directory, not subdirectories
+            // '/vendor/' excludes root vendor/ but NOT public/vendor/
+            // Without leading slash, 'vendor/' matches vendor at ANY level
+            $excludedDirs = array_map(function($dir) {
+                // Add leading slash if not present, ensure trailing slash
+                $dir = ltrim($dir, '/');
+                return '/' . rtrim($dir, '/') . '/';
+            }, $excludedDirs);
+
+            // Add specific exclusions for nested vendor directories that cause rsync cycles
+            $excludedDirs[] = '/vendor/*/vendor/';
+            $excludedDirs[] = '/vendor/nativephp/mobile/vendor/';
+
+            $excludeFlags = implode(' ', array_map(fn ($d) => "--exclude='{$d}'", $excludedDirs));
+            $cmd = "rsync -aL {$excludeFlags} \"{$source}/\" \"{$destination}/\"";
+
+            exec($cmd, $output, $exitCode);
+
+            if ($exitCode !== 0) {
+                throw new \Exception("rsync failed with exit code {$exitCode}");
             }
-            exec($cmd);
         }
     }
 
