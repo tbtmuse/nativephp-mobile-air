@@ -15,13 +15,14 @@ use Native\Mobile\Traits\CleansEnvFile;
 use Native\Mobile\Traits\DisplaysMarketingBanners;
 use Native\Mobile\Traits\InstallsAppIcon;
 use Native\Mobile\Traits\InstallsSplashScreen;
+use Native\Mobile\Traits\PlatformFileOperations;
 use Native\Mobile\Traits\ValidatesAppConfig;
 
 use function Laravel\Prompts\error;
 
 class BuildIosAppCommand extends Command
 {
-    use ChecksLatestBuildNumber, CleansEnvFile, DisplaysMarketingBanners, InstallsAppIcon, InstallsSplashScreen, ValidatesAppConfig;
+    use ChecksLatestBuildNumber, CleansEnvFile, DisplaysMarketingBanners, InstallsAppIcon, InstallsSplashScreen, PlatformFileOperations, ValidatesAppConfig;
 
     private bool $verbose;
 
@@ -143,40 +144,30 @@ class BuildIosAppCommand extends Command
     private function copyLaravelAppIntoIosApp()
     {
         $destination = $this->appPath;
-        $source = rtrim(str_replace('\\', '/', base_path()), '/').'/';
 
-        // Make sure we clear out any old version
         shell_exec("rm -rf {$destination}/*");
 
-        // Use config exclusions + additional required exclusions
-        // NOTE: Use LEADING slash to exclude only root directory, not subdirectories
-        // '/vendor/' excludes root vendor/ but NOT public/vendor/
+        $source = base_path();
+
         $excludedDirs = array_merge(
             config('nativephp.cleanup_exclude_files', []),
             [
-                '/vendor/',
-                '/node_modules/',
-                '/nativephp/',
-                '/output/',
-                '/build/',
-                '/dist/',
-                '/artifacts/',
-                '/.git/',
-                '/storage/logs/',
-                '/storage/framework/cache/',
-                '/vendor/nativephp/mobile/resources/',
-                '/vendor/nativephp/mobile/vendor/',
+                'vendor/nativephp/mobile/resources',
+                'vendor/nativephp/mobile/vendor',
+                'vendor/',
+                'node_modules/',
+                'nativephp/',
+                'output/',
+                'build/',
+                'dist/',
+                'artifacts/',
+                '.git/',
+                'storage/logs/',
+                'storage/framework/cache/',
             ]
         );
 
-        $excludeFlags = implode(' ', array_map(fn ($d) => "--exclude='{$d}'", $excludedDirs));
-        $cmd = "rsync -aL {$excludeFlags} \"{$source}/\" \"{$destination}/\"";
-
-        exec($cmd, $output, $exitCode);
-
-        if ($exitCode !== 0) {
-            throw new \Exception("rsync failed with exit code {$exitCode}");
-        }
+        $this->platformOptimizedCopy($source, $destination, $excludedDirs);
     }
 
     private function updateAppVersion(): void
@@ -775,7 +766,6 @@ class BuildIosAppCommand extends Command
 
     private function removeUnnecessaryFiles(): void
     {
-        // Default directories to remove
         $directoriesToRemove = [
             '.git',
             '.github',
