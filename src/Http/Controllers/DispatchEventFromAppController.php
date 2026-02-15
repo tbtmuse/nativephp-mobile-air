@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use Illuminate\Support\Facades\Log;
 use Native\Mobile\Contracts\NativeEvent;
 use Native\Mobile\Contracts\NativeEventEnvelope;
+use Native\Mobile\Event\NativeEventBus;
 
 class DispatchEventFromAppController
 {
@@ -100,13 +101,17 @@ class DispatchEventFromAppController
         }
 
         try {
-            event($eventInstance);
+            $cursor = NativeEventBus::dispatch($eventInstance);
 
-            Log::debug('[PHP] ✅ DISPATCHED', ['dispatch_id' => $dispatchId]);
+            Log::debug('[PHP] ✅ DISPATCHED', [
+                'dispatch_id' => $dispatchId,
+                'cursor' => $cursor,
+            ]);
 
             return response()->json([
                 'success' => true,
                 'dispatch_id' => $dispatchId,
+                'cursor' => $cursor,
             ]);
         } catch (Throwable $e) {
             Log::error('[PHP] ❌ EVENT_DISPATCH_FAILED', [

@@ -26,7 +26,11 @@ use Native\Mobile\Commands\TailCommand;
 use Native\Mobile\Commands\VersionCommand;
 use Native\Mobile\Commands\JumpCommand;
 use Native\Mobile\Commands\WatchCommand;
+use Livewire\Livewire;
 use Native\Mobile\Edge\NativeTagPrecompiler;
+use Native\Mobile\Event\NativeEventSubscriptions;
+use Native\Mobile\Event\WithNativeEvents;
+use function Livewire\before;
 use Native\Mobile\Http\Middleware\RenderEdgeComponents;
 use Native\Mobile\Support\Ios\PhpUrlGenerator;
 use Spatie\LaravelPackageTools\Package;
@@ -112,6 +116,14 @@ class NativeServiceProvider extends PackageServiceProvider
                 base_path('nativephp')
             );
         });
+
+        $this->app->singleton(NativeEventSubscriptions::class, function ($app) {
+            return new NativeEventSubscriptions(
+                $app->make(\Illuminate\Contracts\Cache\Repository::class),
+                $app->make(\Illuminate\Contracts\Auth\Guard::class),
+                $app->make(\Illuminate\Contracts\Session\Session::class)
+            );
+        });
     }
 
     public function boot()
@@ -130,9 +142,28 @@ class NativeServiceProvider extends PackageServiceProvider
         $this->registerFilesystems();
         $this->registerBladeDirectives();
         $this->configureViteHotFile();
+        $this->registerLivewireHooks();
 
         $blade = app('blade.compiler');
         $blade->precompiler(new NativeTagPrecompiler($blade));
+    }
+
+    protected function registerLivewireHooks(): void
+    {
+        if (!class_exists(Livewire::class)) {
+            return;
+        }
+
+        before('dehydrate', function ($component, $context): void {
+            if (!in_array(WithNativeEvents::class, class_uses_recursive($component), true)) {
+                return;
+            }
+
+            $subscriptions = $this->app->make(NativeEventSubscriptions::class);
+            foreach ($subscriptions->getPendingDispatches($component) as $dispatch) {
+                $component->dispatch($dispatch['event'], $dispatch['payload']);
+            }
+        });
     }
 
     protected function registerBladeDirectives(): void

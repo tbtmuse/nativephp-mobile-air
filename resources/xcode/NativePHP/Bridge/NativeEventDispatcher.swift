@@ -1,5 +1,4 @@
 import Foundation
-import WebKit
 
 /// Static event dispatcher for plugin convenience
 /// Mirrors Android's NativeActionCoordinator.dispatchEvent()
@@ -16,14 +15,8 @@ public enum NativeEventDispatcher {
             return
         }
         
-        // Get WebView via SharedWebView.shared
-        guard let coordinator = SharedWebView.shared.coordinator,
-              let webView = coordinator.webView else {
-            print("⚠️ Coordinator/WebView not available, skipping dispatch for: \(event)")
-            return
-        }
-        
-        // Send to PHP
+        // Direct HTTP dispatch to PHP backend only
+        // UI updates must come from PHP via wire:poll or push (SSE/WebSocket)
         let request = RequestData(
             method: "POST",
             uri: "php://127.0.0.1/_native/api/events",
@@ -36,19 +29,5 @@ public enum NativeEventDispatcher {
         )
         
         _ = NativePHPApp.laravel(request: request)
-        
-        // Inject JS for Livewire
-        let jsEvent = """
-        (function() {
-            const eventEnvelope = \(envelopeJson);
-            const detail = { 
-                name: "\(event)", 
-                event: "\(event)", 
-                payload: eventEnvelope.payload || {} 
-            };
-            document.dispatchEvent(new CustomEvent("native-event", { detail }));
-        })();
-        """
-        webView.evaluateJavaScript(jsEvent)
     }
 }

@@ -266,26 +266,10 @@ struct WebView: UIViewRepresentable {
             )
             
             _ = NativePHPApp.laravel(request: request)
-            
-            // Also inject JS event for Livewire if coordinator exists
-            if let coordinator = SharedWebView.shared.coordinator {
-                let jsEvent = """
-                (function() {
-                    const eventEnvelope = \(envelopeJson);
-                    const detail = { 
-                        name: "\(event)", 
-                        event: "\(event)", 
-                        payload: eventEnvelope.payload || {} 
-                    };
-                    document.dispatchEvent(new CustomEvent("native-event", { detail }));
-                })();
-                """
-                coordinator.webView?.evaluateJavaScript(jsEvent)
-            }
         }
 
         @MainActor
-        func notifyLaravel(
+        static func dispatchEvent(
             event: String,
             envelopeJson: String
         ) {
@@ -294,26 +278,8 @@ struct WebView: UIViewRepresentable {
                 return
             }
 
-            // Inject JS event for Livewire listeners (uses original event name)
-            let jsEvent = """
-            (function() {
-                const eventEnvelope = \(envelopeJson);
-                const detail = { 
-                    name: "\(event)", 
-                    event: "\(event)", 
-                    payload: eventEnvelope.payload || {} 
-                };
-                document.dispatchEvent(new CustomEvent("native-event", { detail }));
-            })();
-            """
-
-            self.webView?.evaluateJavaScript(jsEvent) { _, error in
-                if let error = error {
-                    print("JavaScript injection error for event '\(event)': \(error)")
-                }
-            }
-
-            // Send envelope directly to PHP backend
+            // Direct HTTP dispatch to PHP backend only
+            // UI updates must come from PHP via wire:poll or push (SSE/WebSocket)
             let request = RequestData(
                 method: "POST",
                 uri: "php://127.0.0.1/_native/api/events",
@@ -476,7 +442,7 @@ struct WebView: UIViewRepresentable {
         // Setup Laravel bridge - use shared coordinator so it persists
         LaravelBridge.shared.send = { [weak shared] event, envelopeJson in
             Task { @MainActor in
-                shared?.coordinator?.notifyLaravel(event: event, envelopeJson: envelopeJson as? String ?? "")
+                Coordinator.dispatchEvent(event: event, envelopeJson: envelopeJson as? String ?? "")
             }
         }
 
@@ -584,7 +550,7 @@ struct WebView: UIViewRepresentable {
             e.detail.event = e.detail.event.replace(/^(\\\\)+/, '');
 
             if (window.Livewire) {
-                window.Livewire.dispatch('native:' + e.detail.event, e.detail.payload);
+                window.Livewire.dispatch('native:' + e.detail.event, e.detail);
             }
         });
 
