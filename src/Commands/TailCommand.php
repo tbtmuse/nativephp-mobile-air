@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process as SymfonyProcess;
+use Throwable;
 
 use function Laravel\Prompts\error;
 use function Laravel\Prompts\note;
@@ -23,12 +24,18 @@ class TailCommand extends Command
 
     protected $description = 'Tail Laravel logs from the mobile app';
 
+    protected const ANDROID_LOG_PATH = 'app_storage/persisted_data/storage/logs/laravel.log';
+
+    protected const IOS_LOG_PATH = 'Library/Application Support/storage/logs/laravel.log';
+
     public function handle(): int
     {
         $appId = config('nativephp.app_id');
 
         if (empty($appId)) {
+
             error('NATIVEPHP_APP_ID is not set.');
+
             note('Please add a NATIVEPHP_APP_ID to your .env file (e.g. com.example.myapp).');
 
             return self::FAILURE;
@@ -116,7 +123,7 @@ class TailCommand extends Command
 
         $command[] = '-n';
         $command[] = (string) $lines;
-        $command[] = 'app_storage/persisted_data/storage/logs/laravel.log';
+        $command[] = static::ANDROID_LOG_PATH;
 
         return $this->runProcess($command, $follow);
     }
@@ -198,12 +205,13 @@ class TailCommand extends Command
         $container = trim($result->output());
 
         if (empty($container)) {
+
             error('App container not found. Is the app installed?');
 
             return self::FAILURE;
         }
 
-        $logPath = $container.'/Library/Application Support/storage/logs/laravel.log';
+        $logPath = $container.'/'.static::IOS_LOG_PATH;
 
         if (! file_exists($logPath)) {
             error('Log file not found. Has the app been launched?');
@@ -256,11 +264,19 @@ class TailCommand extends Command
         $tempFile = sys_get_temp_dir().'/nativephp-tail-'.time().'.log';
 
         $copyResult = Process::timeout(30)->run([
-            'xcrun', 'devicectl', 'device', 'copy', 'from',
-            '--domain-type', 'appDataContainer',
-            '--domain-identifier', $appId,
-            '--source', 'Library/Application Support/storage/logs/laravel.log',
-            '--device', $deviceId,
+            'xcrun',
+            'devicectl',
+            'device',
+            'copy',
+            'from',
+            '--domain-type',
+            'appDataContainer',
+            '--domain-identifier',
+            $appId,
+            '--source',
+            static::IOS_LOG_PATH,
+            '--device',
+            $deviceId,
             $tempFile,
         ]);
 
@@ -307,6 +323,7 @@ class TailCommand extends Command
         $simulators = [];
 
         foreach ($json['devices'] as $runtime => $devices) {
+
             $version = $this->parseRuntimeVersion($runtime);
 
             foreach ($devices as $device) {
@@ -340,11 +357,13 @@ class TailCommand extends Command
     private function canRunCommand(string $command): bool
     {
         try {
+
             $process = SymfonyProcess::fromShellCommandline($command);
+
             $process->run();
 
             return $process->isSuccessful();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return false;
         }
     }
@@ -365,7 +384,9 @@ class TailCommand extends Command
             }
 
             return $process->getExitCode() ?? self::SUCCESS;
-        } catch (\Exception $e) {
+
+        } catch (Throwable $e) {
+
             error("Error: {$e->getMessage()}");
 
             return self::FAILURE;
